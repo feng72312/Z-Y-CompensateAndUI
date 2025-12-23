@@ -1,0 +1,21 @@
+{
+  "method": "polynomial_3",
+  "description": "3阶多项式补偿模型 - 极简存储方案",
+  "degree": 3,
+  "coefficients": [
+    1.2e-7,
+    -2.5e-5,
+    0.9998,
+    22.05
+  ],
+  "x_range": [-24.0956, 17.5476],
+  "y_range": [0.9998, 41.9978],
+  "formula": "y = a*x^3 + b*x^2 + c*x + d",
+  "usage": {
+    "python": "y = np.polyval(coefficients, x)",
+    "c": "y = a*x*x*x + b*x*x + c*x + d"
+  },
+  "storage_size": "约100字节",
+  "expected_linearity": "约0.01%"
+}
+

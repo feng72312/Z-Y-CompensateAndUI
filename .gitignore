@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 测试数据和输出（太大不上传）
+AW0350000R7J0004/
+compcodeultimate/output/
+compcodeultimate/output_*/
+ui/output/
+补偿前后的深度图/analysis_result.png
+sonmereport/image/
+
+# CSV 测试数据
+model1.csv
+model2.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+

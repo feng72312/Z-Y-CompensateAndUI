@@ -1,0 +1,20 @@
+{
+  "method": "polynomial_2",
+  "description": "2阶多项式补偿模型 - 最简存储方案",
+  "degree": 2,
+  "coefficients": [
+    -1.5e-5,
+    0.9995,
+    22.1
+  ],
+  "x_range": [-24.0956, 17.5476],
+  "y_range": [0.9998, 41.9978],
+  "formula": "y = a*x^2 + b*x + c",
+  "usage": {
+    "python": "y = np.polyval(coefficients, x)",
+    "c": "y = a*x*x + b*x + c"
+  },
+  "storage_size": "约80字节",
+  "expected_linearity": "约0.1%"
+}
+
