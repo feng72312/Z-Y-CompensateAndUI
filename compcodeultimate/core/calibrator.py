@@ -81,7 +81,7 @@ def apply_median_filter(roi_region: np.ndarray,
     
     # 恢复无效值
     filtered[~valid_mask] = invalid_value
-    return filtered.astype(np.uint16)
+    return np.round(filtered).astype(np.uint16)
 
 
 def apply_gaussian_filter(roi_region: np.ndarray, 
