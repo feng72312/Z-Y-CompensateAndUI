@@ -9,7 +9,8 @@ import numpy as np
 from scipy.interpolate import splrep, splev
 from config import (SPLINE_ORDER, FULL_SCALE, 
                     EXTRAPOLATE_ENABLED, EXTRAPOLATE_MAX_LOW, EXTRAPOLATE_MAX_HIGH,
-                    EXTRAPOLATE_OUTPUT_MIN, EXTRAPOLATE_OUTPUT_MAX, EXTRAPOLATE_CLAMP_OUTPUT)
+                    EXTRAPOLATE_OUTPUT_MIN, EXTRAPOLATE_OUTPUT_MAX, EXTRAPOLATE_CLAMP_OUTPUT,
+                    NORMALIZE_ENABLED, NORMALIZE_TARGET_CENTER, NORMALIZE_AUTO_OFFSET)
 
 
 # ==================== 补偿模型 ====================
@@ -239,6 +240,134 @@ def load_model(filepath):
         'measured_values': measured_values,
         'num_points': num_points
     }
+
+
+# ==================== 输出归一化 ====================
+
+def calculate_normalization_offset(model, target_center=None):
+    """
+    计算归一化偏移量
+    
+    根据模型的输出范围(y_range)自动计算偏移量，使输出以目标中心点为中心。
+    
+    参数:
+        model: 补偿模型字典（需包含 actual_range）
+        target_center: 目标中心点（默认使用配置中的值）
+    
+    返回:
+        float: 偏移量（补偿后的值加上此偏移量即为归一化后的值）
+    
+    公式:
+        offset = target_center - (y_min + y_max) / 2
+        normalized_value = compensated_value + offset
+    """
+    target_center = target_center if target_center is not None else NORMALIZE_TARGET_CENTER
+    
+    y_min, y_max = model['actual_range']
+    current_center = (y_min + y_max) / 2
+    offset = target_center - current_center
+    
+    return offset
+
+
+def load_model_with_normalization(filepath, normalize_config=None):
+    """
+    加载模型并计算归一化参数
+    
+    参数:
+        filepath: 模型文件路径
+        normalize_config: 归一化配置字典（可选）
+            - enabled: 是否启用归一化
+            - target_center: 目标中心点
+            - auto_offset: 是否自动计算偏移量
+            - manual_offset: 手动指定偏移量（auto_offset=False时使用）
+    
+    返回:
+        dict: 模型字典，额外包含归一化信息
+            - normalization: {
+                'enabled': bool,
+                'offset': float,
+                'original_range': (min, max),
+                'normalized_range': (min, max)
+            }
+    """
+    # 默认配置
+    if normalize_config is None:
+        normalize_config = {
+            'enabled': NORMALIZE_ENABLED,
+            'target_center': NORMALIZE_TARGET_CENTER,
+            'auto_offset': NORMALIZE_AUTO_OFFSET,
+            'manual_offset': 0.0
+        }
+    
+    # 加载基础模型
+    model = load_model(filepath)
+    
+    # 计算归一化参数
+    if normalize_config.get('enabled', False):
+        if normalize_config.get('auto_offset', True):
+            offset = calculate_normalization_offset(
+                model, 
+                normalize_config.get('target_center', NORMALIZE_TARGET_CENTER)
+            )
+        else:
+            offset = normalize_config.get('manual_offset', 0.0)
+        
+        y_min, y_max = model['actual_range']
+        normalized_range = (y_min + offset, y_max + offset)
+        
+        model['normalization'] = {
+            'enabled': True,
+            'offset': offset,
+            'original_range': model['actual_range'],
+            'normalized_range': normalized_range,
+            'target_center': normalize_config.get('target_center', NORMALIZE_TARGET_CENTER)
+        }
+    else:
+        model['normalization'] = {
+            'enabled': False,
+            'offset': 0.0,
+            'original_range': model['actual_range'],
+            'normalized_range': model['actual_range'],
+            'target_center': 0.0
+        }
+    
+    return model
+
+
+def apply_normalized_compensation(measured_values, model, extrapolate_config=None):
+    """
+    应用归一化补偿
+    
+    先使用原始模型进行补偿，然后应用归一化偏移量。
+    
+    参数:
+        measured_values: 测量值（单个值或数组）
+        model: 带归一化信息的模型字典
+        extrapolate_config: 外推配置（可选）
+    
+    返回:
+        补偿并归一化后的值
+    
+    注意:
+        如果模型未启用归一化，则等同于 apply_compensation
+    """
+    # 获取归一化配置
+    norm_info = model.get('normalization', {'enabled': False, 'offset': 0.0})
+    
+    # 应用原始补偿
+    compensated = apply_compensation(measured_values, model['inverse_model'], extrapolate_config)
+    
+    # 应用归一化偏移
+    if norm_info.get('enabled', False):
+        offset = norm_info.get('offset', 0.0)
+        compensated = np.array(compensated) + offset
+        
+        # 如果原来是标量，保持标量返回
+        if np.ndim(measured_values) == 0:
+            compensated = float(compensated)
+    
+    return compensated
 
 
 def apply_compensation(measured_values, inverse_model, extrapolate_config=None):
@@ -532,15 +661,17 @@ def calculate_compensation_effect(actual_values, measured_values, compensated_va
 
 # ==================== 逐像素补偿 ====================
 
-def compensate_image_pixels(depth_array, inverse_model, invalid_value=65535, extrapolate_config=None):
+def compensate_image_pixels(depth_array, inverse_model, invalid_value=65535, 
+                            extrapolate_config=None, normalize_offset=0.0):
     """
-    对深度图进行逐像素补偿（支持线性外推）
+    对深度图进行逐像素补偿（支持线性外推和归一化）
     
     参数:
         depth_array: 深度图数组（灰度值）
         inverse_model: 逆向补偿模型
         invalid_value: 无效像素值
         extrapolate_config: 外推配置字典（可选）
+        normalize_offset: 归一化偏移量（mm），补偿后的值会加上此偏移量
     
     返回:
         dict: {
@@ -601,6 +732,11 @@ def compensate_image_pixels(depth_array, inverse_model, invalid_value=65535, ext
             inverse_model,
             extrapolate_config=extrapolate_config
         )
+        
+        # 应用归一化偏移
+        if normalize_offset != 0.0:
+            compensated_mm = compensated_mm + normalize_offset
+        
         compensated_gray = mm_to_gray(compensated_mm)
         
         # 填充结果
@@ -617,7 +753,8 @@ def compensate_image_pixels(depth_array, inverse_model, invalid_value=65535, ext
         'out_of_range_pixels': np.sum(valid_mask) - compensate_count,
         'invalid_pixels': depth_array.size - np.sum(valid_mask),
         'compensation_rate': compensate_count / depth_array.size * 100,
-        'extrapolation_enabled': extrapolate_enabled
+        'extrapolation_enabled': extrapolate_enabled,
+        'normalize_offset': normalize_offset
     }
     
     return {
