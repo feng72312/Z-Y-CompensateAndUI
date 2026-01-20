@@ -9,8 +9,10 @@ import sys
 import numpy as np
 from PIL import Image
 
-from config import CALIB_DIR, TEST_DIR, OUTPUT_DIR, FILTER_ENABLED
-from utils import get_image_files, read_depth_image, get_roi, get_valid_pixels, gray_to_mm
+from config import (CALIB_DIR, TEST_DIR, OUTPUT_DIR, FILTER_ENABLED,
+                    ANOMALY_DETECTION_ENABLED, ANOMALY_THRESHOLD,
+                    PLANE_STD_WARNING_ENABLED, PLANE_STD_THRESHOLD)
+from utils import get_image_files, read_depth_image, get_roi, get_valid_pixels, gray_to_mm, detect_anomalies
 from calibrator import calibrate_image
 from compensator import (build_compensation_model, apply_compensation, 
                         calculate_compensation_effect, compensate_image_pixels,
@@ -44,6 +46,7 @@ def process_calibration_data(calib_dir, use_filter=True):
     
     actual_values = []
     measured_values = []
+    image_plane_stds = []  # 每张图像的平面标准差
     skipped_count = 0
     
     # 处理每张标定图像
@@ -70,12 +73,42 @@ def process_calibration_data(calib_dir, use_filter=True):
         avg_gray = valid_pixels.mean()
         avg_mm = gray_to_mm(avg_gray)
         
+        # 计算平面标准差
+        valid_pixels_mm = gray_to_mm(valid_pixels)
+        plane_std = np.std(valid_pixels_mm)
+        image_plane_stds.append(plane_std)
+        
         actual_values.append(csv_row['实际累计位移(mm)'])
         measured_values.append(avg_mm)
     
     print(f"\n处理完成:")
     print(f"  有效图像: {len(actual_values)}")
     print(f"  跳过图像: {skipped_count}")
+    
+    # 数据质量检测
+    warnings_found = False
+    
+    # 1. 异常点检测
+    if ANOMALY_DETECTION_ENABLED and len(actual_values) >= 2:
+        anomaly_result = detect_anomalies(actual_values, measured_values, ANOMALY_THRESHOLD)
+        if anomaly_result['has_anomaly']:
+            warnings_found = True
+            print(anomaly_result['warning_message'])
+    
+    # 2. 平面标准差检测
+    if PLANE_STD_WARNING_ENABLED and image_plane_stds:
+        avg_plane_std = np.mean(image_plane_stds)
+        print(f"\n平面标准差均值: {avg_plane_std:.6f} mm")
+        if avg_plane_std > PLANE_STD_THRESHOLD:
+            warnings_found = True
+            print("=" * 60)
+            print(f"[警告] 平面标准差均值 ({avg_plane_std:.6f} mm) 超过阈值 ({PLANE_STD_THRESHOLD} mm)!")
+            print("=" * 60)
+            print("[建议] 数据平面度较差，建议:")
+            print("  1. 重新采集标定数据")
+            print("  2. 调整ROI区域，避开边缘或异常区域")
+            print("  3. 检查标定平面是否平整")
+            print("=" * 60)
     
     # 建立补偿模型
     print(f"\n步骤2: 建立补偿模型")
@@ -88,7 +121,9 @@ def process_calibration_data(calib_dir, use_filter=True):
     return {
         'model': model,
         'actual_values': actual_values,
-        'measured_values': measured_values
+        'measured_values': measured_values,
+        'image_plane_stds': image_plane_stds,
+        'warnings_found': warnings_found
     }
 
 
@@ -114,6 +149,7 @@ def process_test_data(test_dir, model, use_filter=True):
     
     actual_values_abs = []  # 绝对值
     measured_values_abs = []  # 绝对值
+    image_plane_stds = []  # 每张图像的平面标准差
     skipped_count = 0
     
     # 处理每张测试图像
@@ -140,12 +176,42 @@ def process_test_data(test_dir, model, use_filter=True):
         avg_gray = valid_pixels.mean()
         measured_mm = gray_to_mm(avg_gray)
         
+        # 计算平面标准差
+        valid_pixels_mm = gray_to_mm(valid_pixels)
+        plane_std = np.std(valid_pixels_mm)
+        image_plane_stds.append(plane_std)
+        
         actual_values_abs.append(csv_row['实际累计位移(mm)'])
         measured_values_abs.append(measured_mm)
     
     print(f"\n处理完成:")
     print(f"  有效图像: {len(actual_values_abs)}")
     print(f"  跳过图像: {skipped_count}")
+    
+    # 数据质量检测
+    warnings_found = False
+    
+    # 1. 异常点检测
+    if ANOMALY_DETECTION_ENABLED and len(actual_values_abs) >= 2:
+        anomaly_result = detect_anomalies(actual_values_abs, measured_values_abs, ANOMALY_THRESHOLD)
+        if anomaly_result['has_anomaly']:
+            warnings_found = True
+            print(anomaly_result['warning_message'])
+    
+    # 2. 平面标准差检测
+    if PLANE_STD_WARNING_ENABLED and image_plane_stds:
+        avg_plane_std = np.mean(image_plane_stds)
+        print(f"\n平面标准差均值: {avg_plane_std:.6f} mm")
+        if avg_plane_std > PLANE_STD_THRESHOLD:
+            warnings_found = True
+            print("=" * 60)
+            print(f"[警告] 平面标准差均值 ({avg_plane_std:.6f} mm) 超过阈值 ({PLANE_STD_THRESHOLD} mm)!")
+            print("=" * 60)
+            print("[建议] 数据平面度较差，建议:")
+            print("  1. 重新采集测试数据")
+            print("  2. 调整ROI区域，避开边缘或异常区域")
+            print("  3. 检查测试平面是否平整")
+            print("=" * 60)
     
     # 转换为numpy数组
     actual_values_abs = np.array(actual_values_abs)
