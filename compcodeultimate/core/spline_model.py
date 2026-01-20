@@ -33,8 +33,11 @@ def build_compensation_model(actual_values: List[float],
     actual_arr = np.array(actual_values, dtype=np.float64)
     measured_arr = np.array(measured_values, dtype=np.float64)
     
-    # 数据验证
-    _validate_calibration_data(actual_arr, measured_arr, spline_order)
+    # 动态调整样条阶数（在验证之前）
+    k = min(spline_order, len(actual_arr) - 1)
+    
+    # 数据验证（使用调整后的阶数）
+    _validate_calibration_data(actual_arr, measured_arr, k)
     
     # 确保数据有序（splrep要求x值递增）
     sort_idx_actual = np.argsort(actual_arr)
@@ -44,9 +47,6 @@ def build_compensation_model(actual_values: List[float],
     sort_idx_measured = np.argsort(measured_arr)
     measured_sorted = measured_arr[sort_idx_measured]
     actual_sorted_by_measured = actual_arr[sort_idx_measured]
-    
-    # 动态调整样条阶数
-    k = min(spline_order, len(actual_arr) - 1)
     
     try:
         # 正向模型: 实际值 -> 测量值
@@ -73,19 +73,24 @@ def build_compensation_model(actual_values: List[float],
 
 def _validate_calibration_data(actual_arr: np.ndarray, 
                                 measured_arr: np.ndarray,
-                                spline_order: int) -> None:
+                                actual_spline_order: int) -> None:
     """
     验证标定数据
+    
+    参数:
+        actual_arr: 实际值数组
+        measured_arr: 测量值数组
+        actual_spline_order: 实际使用的样条阶数（已动态调整）
     
     抛出:
         ValueError: 数据验证失败
     """
-    min_points = spline_order + 1
+    min_points = actual_spline_order + 1
     
     if len(actual_arr) < min_points:
         raise ValueError(
             f"数据点不足：需要至少{min_points}个点，当前只有{len(actual_arr)}个。"
-            f"三次样条拟合(k={spline_order})要求数据点数量 > 阶数。"
+            f"样条拟合(k={actual_spline_order})要求数据点数量 > 阶数。"
         )
     
     if len(actual_arr) != len(measured_arr):
