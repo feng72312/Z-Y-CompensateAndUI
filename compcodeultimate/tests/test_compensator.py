@@ -45,6 +45,24 @@ class TestApplyCompensation:
         
         # 应该返回有效值（外推结果）
         assert result is not None
+    
+    def test_scalar_returns_float_without_extrapolation(self, sample_compensation_model):
+        """测试标量输入在不启用外推时返回float"""
+        result = apply_compensation(5.0, sample_compensation_model, extrapolate_config=None)
+        assert isinstance(result, float), f"期望返回float，实际返回{type(result)}"
+        assert not isinstance(result, np.ndarray), "标量输入不应返回numpy数组"
+    
+    def test_array_returns_ndarray_without_extrapolation(self, sample_compensation_model):
+        """测试数组输入在不启用外推时返回np.ndarray"""
+        result = apply_compensation(np.array([5.0, 10.0]), sample_compensation_model, extrapolate_config=None)
+        assert isinstance(result, np.ndarray), f"期望返回np.ndarray，实际返回{type(result)}"
+        assert result.shape == (2,), "数组形状应该保持"
+    
+    def test_scalar_returns_float_with_disabled_extrapolation(self, sample_compensation_model):
+        """测试标量输入在显式禁用外推时返回float"""
+        config = ExtrapolateConfig(enabled=False)
+        result = apply_compensation(5.0, sample_compensation_model, extrapolate_config=config)
+        assert isinstance(result, float), f"期望返回float，实际返回{type(result)}"
 
 
 class TestCompensateImagePixels:

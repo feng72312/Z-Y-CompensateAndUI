@@ -35,13 +35,18 @@ def apply_compensation(measured_values: Union[float, np.ndarray],
     
     返回:
         补偿后的值
+        - 输入为标量时返回 float
+        - 输入为数组时返回 np.ndarray
     """
     if extrapolate_config is not None and extrapolate_config.enabled:
         return apply_extrapolation(measured_values, model, extrapolate_config)
     
     # 不使用外推，直接使用样条插值
+    # 检测输入是否为标量，保持返回类型一致性
+    is_scalar = np.ndim(measured_values) == 0
     inverse_model = model.get_inverse_model_tuple()
-    return splev(measured_values, inverse_model, ext=0)
+    result = splev(measured_values, inverse_model, ext=0)
+    return float(result) if is_scalar else result
 
 
 def compensate_image_pixels(depth_array: np.ndarray,
