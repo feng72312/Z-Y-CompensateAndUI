@@ -80,7 +80,7 @@ def apply_extrapolation(measured_values: Union[float, np.ndarray],
     if config.clamp_output:
         result = np.clip(result, config.output_min, config.output_max)
     
-    return result[0] if is_scalar else result
+    return float(result[0]) if is_scalar else result
 
 
 def _extrapolate_low(values: np.ndarray, 
